@@ -1,0 +1,658 @@
+---
+title: "Predicted seagrass carbon map at Cadiz Bay for 2024 and 2025"
+author: "Lee, Chengfa Benjamin"
+date: "`r Sys.Date()`"
+output: bookdown::html_document2
+# output: powerpoint_presentation
+bibliography: references.bib 
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(magrittr)
+library(sf)
+library(dplyr)
+library(tidyr)
+library(leaflet)
+library(viridis)
+library(terra)
+library(ggplot2)
+```
+
+This page documents the results of the _Zostera noltii_ seagrass carbon mapping work at Cadiz Bay. This includes work done in:
+
+* [Coring Carbon Seagrass](https://sigoiry.github.io/Coring_Carbon_Seagrasses/) by Simon Oiry
+* [Exploring the relationship between seagrass reflectance and biomass](https://leechengfa.github.io/Seagrass_reflectance_biomass_2025.github.io/)
+* [Measuring the carbon content in _Zostera noltii_ seagrass](https://leechengfa.github.io/seagrass_carbon_2025/)
+
+
+All analyses were performed in R version 4.5.2 [@Rversion].
+All work belong to the [REWRITE project](https://rewriteproject.eu/).
+
+# Study Location
+
+This page focuses on Cadiz Bay, a [demonstrator site for the REWRITE PROJECT](https://rewriteproject.eu/demonstrator-network/cadiz-bay). There is an extensive seagrass meadow along the bay.  
+<!-- Its seagrass meadow was estimated to be 3.52 km^2^ during the peak season of 2024 [@davies2024]. -->
+
+The sites were sampled according to transect lines.
+
+```{r samplingDesign}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+# stations <- read_sf('data/shp/Points.shp') %>%
+#   filter(!is.na(seagrassA)) %>%
+#   select(name, type, site, habitat, longitude, latitude)
+# 
+# group_bounds <- read_sf('data/shp/Polygons.shp')
+#   group_bounds$colour <- c('darkred','darkgreen')
+# 
+# map_centre <- stations %>% 
+#   st_union() %>%
+#   st_centroid() %>%
+#   st_coordinates()
+# 
+# pal.shp <- colorFactor(c('darkgreen','darkred'), domain = c('natural','rewilded'))
+# 
+# m.shp <- leaflet(stations) %>%
+#   addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+#   setView(map_centre[1], map_centre[2], 14) %>%
+#   addCircleMarkers(radius = 2, color = ~pal.shp(site), fillOpacity = 1, label = ~name) %>%
+#   addLegend(pal = pal.shp, values = ~site, opacity = 1)
+# 
+# m.shp
+```
+
+# Seasonal change in NDVI
+
+```{r phenologySetUp}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+phenology <- data.frame(list(
+  "tile.name" = list.files('data/ice_creams_prediction') %>%
+    gsub('_Pred_BFRD_V1_3.tif', '', .)
+))
+  phenology$date <- lapply(phenology$tile.name, FUN = function(string) {
+    x <- string %>%
+      strsplit("_") %>%
+      unlist() %>%
+      "["(3) %>%
+      strsplit("T") %>%
+      unlist() %>%
+      "["(1)
+
+    return(x)
+  }) %>% unlist() %>% as.Date('%Y%m%d')
+
+  phenology$ndvi.mean <- NA
+  phenology$ndvi.sd <- NA
+
+import.icecreams <- function(image.path) {
+  map.ice <- rast(image.path)
+    map.ice[map.ice == 0 | map.ice == -1] <- NA
+    
+  return(map.ice)
+}
+  
+import.ndvi <- function(image.path) {
+  map.index <- rast(image.path)
+  
+  return(map.index)
+}  
+
+for (n in phenology$tile.name) {
+  pheno.icecreams <- list.files('data/ice_creams_prediction', full.names = TRUE) %>%
+    grep(n, ., value = TRUE) %>%
+    import.icecreams()
+  
+  pheno.ndvi <- list.files('data/ndvi', full.names = TRUE) %>%
+    grep(n, ., value = TRUE) %>%
+    import.ndvi() %>%
+    mask(pheno.icecreams$Out_Class, inverse = TRUE, maskvalues = 4)
+  pheno.ndvi[pheno.icecreams$Seagrass_Cover < 20] <- NA
+
+  phenology$ndvi.mean[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'mean', na.rm = TRUE)
+  phenology$ndvi.sd[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'sd', na.rm = TRUE)
+}
+```
+
+```{r phenologyndvi}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Mean NDVI value of pixels classified by the ICE CREAMS model as seagrass in 2024 and 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-07-15) for showcasing the analyses.
+
+phenology$ndvi.mean <- unlist(phenology$ndvi.mean)
+phenology$ndvi.sd <- unlist(phenology$ndvi.sd)
+
+phenology$year <- format(phenology$date,"%Y") %>% 
+  as.character()
+phenology$daymonth <- format(phenology$date,"%d-%m") %>% 
+  as.character() %>%
+  as.Date("%d-%m")
+
+ggplot(phenology, aes(x = daymonth, y = ndvi.mean, colour = NA)) +
+  # geom_ribbon(aes(ymin = ndvi.mean - ndvi.sd, ymax = ndvi.mean + ndvi.sd), alpha = 0.5) +
+  geom_vline(xintercept = format(as.Date('20250715', '%Y%m%d'), "%d-%m") %>% as.character() %>% as.Date("%d-%m"), colour = 'red', linetype = 2, linewidth = 1) +
+  # geom_vline(xintercept = as.Date('20250715', '%Y%m%d'), colour = 'red', linetype = 2, linewidth = 1) +
+  geom_point(aes(colour = year)) +
+  geom_smooth(aes(colour = 'Smoothed trend')) + 
+  scale_x_date(breaks = '1 month', date_labels = '%d %b') + 
+  xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
+  # manual legend creation 
+  scale_colour_manual('Legend', values = c('2024' = 'navy', '2025' = 'orange', 'Smoothed trend' = 'blue')) +
+  theme(legend.position = 'bottom', legend.direction = "horizontal")
+```
+
+The intertidal masks were digitised using QGIS according to the published maps detailing the seagrass areas A to P reported in @sousa2019. An additional polygon for the rewilded island was included in the mask.
+
+# ICE CREAMS Model prediction
+
+For the purpose of map display and data analysis, the result from the Sentinel-2 image on 14 June 2025 was chosen. This date falls within the fieldwork dates and is thus best for validation and groundtruthing. 
+
+```{r customleafletfunctionlegenddecreasing}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+## function copied from stackoverflow
+## https://stackoverflow.com/questions/40276569/reverse-order-in-r-leaflet-continuous-legend
+addLegend_decreasing <- function (map, position = c("topright", "bottomright", "bottomleft","topleft"),
+                                  pal, values, na.label = "NA", bins = 7, colors, 
+                                  opacity = 0.5, labels = NULL, labFormat = labelFormat(), 
+                                  title = NULL, className = "info legend", layerId = NULL, 
+                                  group = NULL, data = getMapData(map), decreasing = FALSE) {
+  
+        position <- match.arg(position)
+        type <- "unknown"
+        na.color <- NULL
+        extra <- NULL
+        if (!missing(pal)) {
+            if (!missing(colors)) 
+                stop("You must provide either 'pal' or 'colors' (not both)")
+            if (missing(title) && inherits(values, "formula")) 
+                title <- deparse(values[[2]])
+            values <- evalFormula(values, data)
+            type <- attr(pal, "colorType", exact = TRUE)
+            args <- attr(pal, "colorArgs", exact = TRUE)
+            na.color <- args$na.color
+            if (!is.null(na.color) && col2rgb(na.color, alpha = TRUE)[[4]] == 
+                    0) {
+                na.color <- NULL
+            }
+            if (type != "numeric" && !missing(bins)) 
+                warning("'bins' is ignored because the palette type is not numeric")
+            if (type == "numeric") {
+                cuts <- if (length(bins) == 1) 
+                    pretty(values, bins)
+                else bins   
+                if (length(bins) > 2) 
+                    if (!all(abs(diff(bins, differences = 2)) <= 
+                                     sqrt(.Machine$double.eps))) 
+                        stop("The vector of breaks 'bins' must be equally spaced")
+                n <- length(cuts)
+                r <- range(values, na.rm = TRUE)
+                cuts <- cuts[cuts >= r[1] & cuts <= r[2]]
+                n <- length(cuts)
+                p <- (cuts - r[1])/(r[2] - r[1])
+                extra <- list(p_1 = p[1], p_n = p[n])
+                p <- c("", paste0(100 * p, "%"), "")
+                if (decreasing == TRUE){
+                    colors <- pal(rev(c(r[1], cuts, r[2])))
+                    labels <- rev(labFormat(type = "numeric", cuts))
+                }else{
+                    colors <- pal(c(r[1], cuts, r[2]))
+                    labels <- rev(labFormat(type = "numeric", cuts))
+                }
+                colors <- paste(colors, p, sep = " ", collapse = ", ")
+            }
+            else if (type == "bin") {
+                cuts <- args$bins
+                n <- length(cuts)
+                mids <- (cuts[-1] + cuts[-n])/2
+                if (decreasing == TRUE){
+                    colors <- pal(rev(mids))
+                    labels <- rev(labFormat(type = "bin", cuts))
+                }else{
+                    colors <- pal(mids)
+                    labels <- labFormat(type = "bin", cuts)
+                }
+            }
+            else if (type == "quantile") {
+                p <- args$probs
+                n <- length(p)
+                cuts <- quantile(values, probs = p, na.rm = TRUE)
+                mids <- quantile(values, probs = (p[-1] + p[-n])/2, na.rm = TRUE)
+                if (decreasing == TRUE){
+                    colors <- pal(rev(mids))
+                    labels <- rev(labFormat(type = "quantile", cuts, p))
+                }else{
+                    colors <- pal(mids)
+                    labels <- labFormat(type = "quantile", cuts, p)
+                }
+            }
+            else if (type == "factor") {
+                v <- sort(unique(na.omit(values)))
+                colors <- pal(v)
+                labels <- labFormat(type = "factor", v)
+                if (decreasing == TRUE){
+                    colors <- pal(rev(v))
+                    labels <- rev(labFormat(type = "factor", v))
+                }else{
+                    colors <- pal(v)
+                    labels <- labFormat(type = "factor", v)
+                }
+            }
+            else stop("Palette function not supported")
+            if (!any(is.na(values))) 
+                na.color <- NULL
+        }
+        else {
+            if (length(colors) != length(labels)) 
+                stop("'colors' and 'labels' must be of the same length")
+        }
+        legend <- list(colors = I(unname(colors)), labels = I(unname(labels)), 
+                                     na_color = na.color, na_label = na.label, opacity = opacity, 
+                                     position = position, type = type, title = title, extra = extra, 
+                                     layerId = layerId, className = className, group = group)
+        invokeMethod(map, data, "addLegend", legend)
+        }
+```
+
+```{r icecreams}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+pal.icecreams <- c('#ded4c3','#926e62','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
+labels.icecreams <- c("Bare Sand","Bare Sediment","Chlorophyta","Magnoliopsida","Microphytobenthos","Phaeophyceae","Rhodophyta","Water","Xanthophyceae")
+
+map.class <- import.icecreams('data/ice_creams_prediction/S2B_MSIL2A_20250614T110619_N0511_R137_T29SQA_20250614T140230_Pred_BFRD_V1_3.tif')
+  levels(map.class$Out_Class) <- data.frame(id=1:9, cover = labels.icecreams)
+
+pal.class <- colorFactor(pal.icecreams, domain = 1:9, na.color = "transparent")
+```
+
+```{r icecreamsseagrass}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+map.class.seagrass <- map.class
+  map.class.seagrass$Out_Class[map.class.seagrass$Out_Class != 4] <- NA
+  levels(map.class.seagrass$Out_Class) <- data.frame(id=4, cover = labels.icecreams[4])
+```
+
+```{r ndvi}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+map.ndvi <- import.ndvi('data/ndvi/S2B_MSIL2A_20250614T110619_N0511_R137_T29SQA_20250614T140230_ndvi.tif')
+
+pal.ndvi <- colorNumeric(c('white','darkgreen'), domain = c(0, 1), na.color = "transparent")
+```
+
+```{r icecreamsspc}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+pal.spc <- colorNumeric(c('white','darkgreen'), domain = c(20, 100), na.color = "transparent")
+```
+
+```{r icecreamsuncertainty}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+pal.unc <- colorNumeric(viridis_pal(option = 'D')(100), domain = c(0, 1), na.color = "transparent")
+```
+
+```{r icecreamscombinedmap}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+m.icecreams <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+  setView(map_centre[1], map_centre[2], 12) %>%
+  # ice creams class map
+  addRasterImage(map.class, colors = pal.class, group = 'Classification map') %>%
+  addLegend(position = 'bottomleft', colors = pal.icecreams, values = 1:9, labels = labels.icecreams, opacity = 1, group = 'Legend: Class') %>%
+  # ice creams seagrass only map
+  addRasterImage(map.class.seagrass, colors = pal.icecreams[4], group = 'Seagrass map') %>%
+  addLegend(position = 'bottomleft', colors = pal.icecreams[4], values = 4, labels = labels.icecreams[4], opacity = 1, group = 'Legend: Seagrass') %>%
+  # NDVI map
+  addRasterImage(map.ndvi, colors = pal.ndvi, group = 'NDVI') %>%
+  addLegend_decreasing(position = 'bottomleft', pal = pal.ndvi, values = c(0.2, 1), opacity = 1, decreasing = TRUE, group = 'Legend: NDVI') %>%
+  # ice creams seagrass percent cover map
+  addRasterImage(map.class$Seagrass_Cover, colors = pal.spc, group = 'Seagrass percent cover') %>%
+  addLegend_decreasing(position = 'bottomleft', pal = pal.spc, values = c(20, 100), opacity = 1, decreasing = TRUE, group = 'Legend: Percent cover (%)') %>%
+  # ice creams uncertainty map 
+  addRasterImage(map.class$Class_Probs, colors = pal.unc, group = 'Class probability') %>%
+  addLegend_decreasing(position = 'bottomleft', pal = pal.unc, values = c(0, 1), opacity = 1, decreasing = TRUE, group = 'Legend: Probability') %>%
+  # outline of natural & rewilded sites
+  addPolygons(data = group_bounds, color = ~colour, opacity = 1, fillColor = 'transparent', group = 'Sample sites') %>%
+  addLegend(position = 'bottomleft', colors = c('darkred','darkgreen'), values = c('rewilded', 'natural'), labels = c('Rewilded', 'Natural'), group = 'Sample sites') %>%
+  # layer control
+  addLayersControl(
+    baseGroups = c('Classification map', 'Seagrass map', 'NDVI', 'Seagrass percent cover', 'Class probability'),
+    overlayGroups = c('Sample sites', 'Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  hideGroup(c('Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'))
+m.icecreams
+```
+
+# Biomass prediction 
+
+```{r predictedbiomass}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+derive.agb <- function(ndvi) {
+  agb <- ndvi * 140 - 9.5
+    agb[agb < 0] <- 0
+  
+  return(mask(agb, map.class$Out_Class, inverse = TRUE, maskvalues = 4))
+}
+
+map.agb <- derive.agb(map.ndvi)
+
+derive.bgb <- function(agb) {
+  bgb <- agb * 0.69 + 9.1
+    bgb[agb == 0] <- 0
+  
+  return(bgb)
+}
+
+map.bgb <- derive.bgb(map.agb)
+
+map.tgb <- map.agb + map.bgb
+
+## calculate AGB and BGB over unit area (g/m2) 
+## conversion first to stock by multiplying by pixel area of Sentinel-2
+## then conversion to kg by dividing by 100
+s2map_to_stock <- function(map) {
+  total <- map %>%
+    global(fun = 'sum', na.rm = TRUE) %>%
+    "*"(100) %>%
+    unlist()
+  
+  return(total)
+}
+
+## conversion to Mg (divide by 1e6)
+biomass.agb <- s2map_to_stock(map.agb) / 1000000
+biomass.bgb <- s2map_to_stock(map.bgb) / 1000000
+biomass.tgb <- s2map_to_stock(map.tgb) / 1000000
+
+## shared palette
+max.biomass <- global(map.tgb, fun = 'max', na.rm = TRUE) %>%
+  unlist() %>%
+  round() 
+pal.biomass <- colorNumeric(c('palegreen','darkolivegreen'), domain = c(0, max.biomass), na.color = 'transparent')
+```
+
+```{r predictedcarbonstock}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+## g/m2 * g/g --> g as output
+aveiro.carbon.leaf.factor <- 0.2870144
+derive.carbon.leaf <- function(map.biomass.leaf) {
+  map.biomass.leaf * aveiro.carbon.leaf.factor
+}
+
+map.agc <- derive.carbon.leaf(map.agb)
+
+## g/m2 * g/g --> g as output
+aveiro.carbon.root.factor <- 0.252088
+derive.carbon.root <- function(map.biomass.root) {
+  map.biomass.root * aveiro.carbon.root.factor
+}
+
+map.bgc <- derive.carbon.leaf(map.bgb)
+
+# calculate total seagrass extent covered, based on a Sentinel-2 pixel area
+area.seagrass <- map.class.seagrass$Out_Class %>%
+  noNA() %>%
+  s2map_to_stock()
+
+# based on Ana Sousa's paper that the mean annual seagrass soil carbon in the top 10 cm is 162 g C/m2; mean monthly soil carbon for July 2025 is 150 g C/m2
+sousa.soil.mean <- 150.8
+carbon.soil <- sousa.soil.mean * area.seagrass / 1000000
+
+map.tgc <- map.agc + map.bgc + sousa.soil.mean
+
+
+
+## conversion to Mg (divide by 1e6)
+carbon.agc <- s2map_to_stock(map.agc) / 1000000
+carbon.bgc <- s2map_to_stock(map.bgc) / 1000000
+carbon.tgc <- s2map_to_stock(map.tgc) / 1000000
+
+## shared palette
+max.carbon <- global(map.tgc, fun = 'max', na.rm = TRUE) %>%
+  unlist() %>%
+  round()
+pal.carbon <- colorNumeric(viridis_pal(option = 'G', direction = -1)(100), domain = c(0, max.carbon), na.color = 'transparent')
+```
+
+```{r mapbiomass}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+m.biomass <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+  setView(map_centre[1], map_centre[2], 12) %>%
+  # NDVI map
+  addRasterImage(map.ndvi, colors = pal.ndvi, group = 'NDVI') %>%
+  addLegend_decreasing(position = 'bottomleft', pal = pal.ndvi, values = c(0.2, 1), opacity = 1, decreasing = TRUE, group = 'Legend: NDVI') %>%
+  # AGB map
+  addRasterImage(map.agb, colors = pal.biomass, group = 'Aboveground biomass') %>%
+  addLegend_decreasing(position = 'bottomleft', pal = pal.biomass, values = c(0, max.biomass), opacity = 1, decreasing = TRUE, group = 'Legend: Biomass (g DW/m<sup>2</sup>)') %>%
+  # BGB map
+  addRasterImage(map.bgb, colors = pal.biomass, group = 'Belowground biomass') %>%
+  # TGB map
+  addRasterImage(map.tgb, colors = pal.biomass, group = 'Total biomass') %>%
+  # AGC map
+  addRasterImage(map.agc, colors = pal.carbon, group = 'Aboveground carbon') %>%
+  addLegend_decreasing(position = 'bottomleft', pal = pal.carbon, values = c(0, max.carbon), opacity = 1, decreasing = TRUE, group = 'Legend: Carbon (g C/m<sup>2</sup>)') %>%
+  # BGC map
+  addRasterImage(map.bgc, colors = pal.carbon, group = 'Belowground carbon') %>%
+  # TGC map
+  addRasterImage(map.tgc, colors = pal.carbon, group = 'Total carbon') %>%
+  # outline of natural & rewilded sites
+  addPolygons(data = group_bounds, color = ~colour, opacity = 1, fillColor = 'transparent', group = 'Sample sites') %>%
+  addLegend(position = 'bottomleft', colors = c('darkred','darkgreen'), values = c('rewilded', 'natural'), labels = c('Rewilded', 'Natural'), group = 'Sample sites') %>%
+  # layer control
+  addLayersControl(
+    baseGroups = c('NDVI', 'Aboveground biomass', 'Belowground biomass', 'Total biomass', 'Aboveground carbon', 'Belowground carbon', 'Total carbon'),
+    overlayGroups = c('Sample sites', 'Legend: NDVI', 'Legend: Biomass (g DW/m<sup>2</sup>)', 'Legend: Carbon (g C/m<sup>2</sup>)'),
+    options = layersControlOptions(collapsed = FALSE)
+  ) %>%
+  hideGroup(c('NDVI', 'Legend: NDVI', 'Legend: Carbon (g C/m<sup>2</sup>)')) %>%
+  showGroup('Aboveground biomass')
+m.biomass
+```
+
+# Carbon stock prediction
+
+```{r biomassCarbonTable}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+# function to calculate mean pixel with plus/minus sd
+mean_sd_pixel <- function(map) {
+  mean.pixel <- map %>%
+    global(fun = 'mean', na.rm = TRUE) %>%
+    unlist() %>%
+    round(1)
+  
+  sd.pixel <- map %>%
+    global(fun = 'sd', na.rm = TRUE) %>%
+    unlist() %>%
+    round(1)
+  
+  return(paste(mean.pixel, '\u00B1', sd.pixel))
+}
+
+table.bc <- data.frame(
+    list(
+      "component" = c('Aboveground', 'Belowground', 'Soil','Total'),
+      "extent" = rep(round(area.seagrass/10000, 1), 4) %>% unlist(),
+      "biomass_per_area" = c(mean_sd_pixel(map.agb), mean_sd_pixel(map.bgb), 'NA', mean_sd_pixel(map.tgb)),
+      "biomass" = c(round(biomass.agb, 1), round(biomass.bgb, 1), 'NA', round(biomass.tgb, 1)),
+      "carbon_content" = c(round(aveiro.carbon.leaf.factor*100, 1), round(aveiro.carbon.root.factor*100, 1), 'NA', 'NA'),
+      "carbon_per_area" = c(mean_sd_pixel(map.agc), mean_sd_pixel(map.bgc), sousa.soil.mean, mean_sd_pixel(map.tgc)),
+      "carbon_stock" = c(round(carbon.agc, 1), round(carbon.bgc, 1), round(carbon.soil, 1), round(carbon.agc + carbon.bgc + carbon.soil, 1))
+    )) 
+
+names(table.bc) <- c("Component", "Total seagrass extent<br>(ha)", "Mean biomass per area<br>(g DW/m^2^)", "Total biomass<br>(Mg DW)", "Carbon content<br>(% g C/g DW)", "Mean carbon stock per area<br>(g C/m^2^)", "Total carbon stock<br>(Mg C)")
+
+knitr::kable(table.bc, 
+             format = "pipe",
+             align = 'c',
+             caption = 'Seagrass biomass and carbon at Ria de Aveiro. "DW" denotes the dry weight of the seagrass samples while "C" denotes the carbon in the seagrass samples. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon stock per area for July 2025 reported in @sousa2019, which was based on the top 10 cm sediment layer.')
+```
+
+# Seasonal change in seagrass biomass
+
+```{r phenologyCalculations}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+  phenology$extent <- NA
+  phenology$ag_b_perArea <- NA
+  phenology$bg_b_perArea <- NA
+  phenology$tg_b_perArea <- NA
+  phenology$ag_b_total <- NA
+  phenology$bg_b_total <- NA
+  phenology$tg_b_total <- NA
+  phenology$ag_c_perArea <- NA
+  phenology$bg_c_perArea <- NA
+  phenology$tg_c_perArea <- NA
+  phenology$ag_c_total <- NA
+  phenology$bg_c_total <- NA
+  phenology$tg_c_total <- NA
+  
+mean_pixel <- function(map) {
+  mean.pixel <- map %>%
+    global(fun = 'mean', na.rm = TRUE) %>%
+    unlist() %>%
+    round(2)
+  
+  return(mean.pixel)
+}
+
+for (n in phenology$tile.name) {
+  pheno.class <- list.files('data/ice_creams_prediction', full.names = TRUE) %>%
+    grep(n, ., value = TRUE) %>%
+    import.icecreams()
+    levels(pheno.class$Out_Class) <- data.frame(id=1:9, cover = labels.icecreams)
+
+  pheno.class.seagrass <- pheno.class$Out_Class
+    pheno.class.seagrass[pheno.class.seagrass != 4] <- NA
+      levels(pheno.class.seagrass) <- data.frame(id=4, cover = labels.icecreams[4])
+  phenology$extent[phenology$tile.name == n] <- pheno.class.seagrass %>%
+    noNA() %>%
+    s2map_to_stock()
+
+  pheno.ndvi <- list.files('data/ndvi', full.names = TRUE) %>%
+    grep(n, ., value = TRUE) %>%
+    import.icecreams()
+
+  pheno.agb <- derive.agb(pheno.ndvi)
+  pheno.bgb <- derive.bgb(pheno.agb)
+  pheno.tgb <- pheno.agb + pheno.bgb
+  pheno.agc <- derive.carbon.leaf(pheno.agb)
+  pheno.bgc <- derive.carbon.root(pheno.bgb)
+  pheno.tgc <- pheno.agc + pheno.bgc + sousa.soil.mean
+
+  phenology$ag_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agb)
+  phenology$bg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgb)
+  phenology$tg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.tgb)
+  phenology$ag_b_total[phenology$tile.name == n] <- s2map_to_stock(pheno.agb) / 1000000
+  phenology$bg_b_total[phenology$tile.name == n] <- s2map_to_stock(pheno.bgb) / 1000000
+  phenology$tg_b_total[phenology$tile.name == n] <- s2map_to_stock(pheno.tgb) / 1000000
+
+  phenology$ag_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agc)
+  phenology$bg_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgc)
+  phenology$tg_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.tgc)
+  phenology$ag_c_total[phenology$tile.name == n] <- s2map_to_stock(pheno.agc) / 1000000
+  phenology$bg_c_total[phenology$tile.name == n] <- s2map_to_stock(pheno.bgc) / 1000000
+  phenology$tg_c_total[phenology$tile.name == n] <- s2map_to_stock(pheno.tgc) / 1000000
+}
+```
+
+```{r phenologybiomassgraph}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Predicted biomass values of the aboveground, belowground and total components of the seagrass meadows in Ria de Aveiro in the years 2024 and 2025.
+
+phenology.longer <- phenology %>%
+  pivot_longer(contains("_"), names_to = c('component', 'material', 'scale'), names_sep = "_")
+
+phenology.longer$material <- factor(phenology.longer$material, labels =  c('b' = 'Biomass', 'c' = 'Carbon'))
+phenology.longer$scale <- factor(phenology.longer$scale, labels =  c('perArea' = "Mean~pixel~value~(g/m^{2})", 'total' = "Total~(Mg)"))
+phenology.longer$component <- factor(phenology.longer$component, labels = c('ag' = 'Aboveground', 'bg' = 'Belowground', 'tg' = 'Total'))
+
+ggplot(phenology.longer %>% filter(material == 'Biomass'), aes(x = daymonth, y = value, colour = component)) +
+  geom_smooth() + 
+  geom_point() +
+  xlab('Date') + ylab('Value (See grid labels for units)') +
+  scale_colour_viridis_d('Component', labels = c('ag' = 'Aboveground', 'bg' = 'Belowground', 'tg' = 'Total'), option = "D", direction = -1) +
+  scale_x_date(breaks = '1 month', date_labels = '%d %b') + 
+  facet_grid(scale ~ ., scales = 'free', labeller = label_parsed)
+```
+
+```{r phenologycarbongraph}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Predicted carbon values of the aboveground and belowground components of the seagrass meadows in Ria de Aveiro in the years 2024 and 2025. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon stock per area for July 2025 reported in @sousa2019, which was based on the top 10 cm sediment layer.
+
+ggplot(phenology.longer %>% filter(material == 'Carbon'), aes(x = daymonth, y = value, colour = component)) +
+  geom_smooth() + 
+  geom_point() +
+  xlab('Date') + ylab('Value (See grid labels for units)') +
+  scale_colour_viridis_d('Component', option = "D", direction = -1) +
+  scale_x_date(breaks = '3 month', date_labels = '%d %b') + 
+  facet_wrap(scale ~ component, scales = 'free', labeller = label_parsed)
+```
+
+# Reference
