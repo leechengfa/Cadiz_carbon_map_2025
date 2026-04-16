@@ -45,27 +45,27 @@ The sites were sampled according to transect lines.
 #| message: false
 #| warning: false
 
-# stations <- read_sf('data/shp/Points.shp') %>%
-#   filter(!is.na(seagrassA)) %>%
-#   select(name, type, site, habitat, longitude, latitude)
-# 
+stations <- read.csv('data/shp/Cadiz_SamplingSites.txt', sep = '\t') %>%
+  st_as_sf(coords = c('X', 'Y')) %>%
+  rename(name = X.1)
+  
 # group_bounds <- read_sf('data/shp/Polygons.shp')
 #   group_bounds$colour <- c('darkred','darkgreen')
-# 
-# map_centre <- stations %>% 
-#   st_union() %>%
-#   st_centroid() %>%
-#   st_coordinates()
-# 
-# pal.shp <- colorFactor(c('darkgreen','darkred'), domain = c('natural','rewilded'))
-# 
-# m.shp <- leaflet(stations) %>%
-#   addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
-#   setView(map_centre[1], map_centre[2], 14) %>%
-#   addCircleMarkers(radius = 2, color = ~pal.shp(site), fillOpacity = 1, label = ~name) %>%
-#   addLegend(pal = pal.shp, values = ~site, opacity = 1)
-# 
-# m.shp
+
+map_centre <- stations %>%
+  st_union() %>%
+  st_centroid() %>%
+  st_coordinates()
+
+pal.shp <- colorFactor(c('brown4','beige'), domain = c('Mud','Sand'))
+
+m.shp <- leaflet(stations) %>%
+  addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
+  setView(map_centre[1], map_centre[2], 14) %>%
+  addCircleMarkers(radius = 2, color = ~pal.shp(Substrate), fillOpacity = 1, label = ~name) %>%
+  addLegend(pal = pal.shp, values = ~Substrate, opacity = 1)
+
+m.shp
 ```
 
 # Seasonal change in NDVI
@@ -130,7 +130,7 @@ for (n in phenology$tile.name) {
 #| message: false
 #| warning: false
 #| fig.width: 10
-#| fig.cap: Mean NDVI value of pixels classified by the ICE CREAMS model as seagrass in 2024 and 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-07-15) for showcasing the analyses.
+#| fig.cap: Mean NDVI value of pixels classified by the ICE CREAMS model as seagrass in 2024 and 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) for showcasing the analyses.
 
 phenology$ndvi.mean <- unlist(phenology$ndvi.mean)
 phenology$ndvi.sd <- unlist(phenology$ndvi.sd)
@@ -141,16 +141,21 @@ phenology$daymonth <- format(phenology$date,"%d-%m") %>%
   as.character() %>%
   as.Date("%d-%m")
 
+year_scheme <- viridis(10)
+
 ggplot(phenology, aes(x = daymonth, y = ndvi.mean, colour = NA)) +
   # geom_ribbon(aes(ymin = ndvi.mean - ndvi.sd, ymax = ndvi.mean + ndvi.sd), alpha = 0.5) +
-  geom_vline(xintercept = format(as.Date('20250715', '%Y%m%d'), "%d-%m") %>% as.character() %>% as.Date("%d-%m"), colour = 'red', linetype = 2, linewidth = 1) +
+  geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%d-%m") %>% as.character() %>% as.Date("%d-%m"), colour = 'red', linetype = 2, linewidth = 1) +
   # geom_vline(xintercept = as.Date('20250715', '%Y%m%d'), colour = 'red', linetype = 2, linewidth = 1) +
   geom_point(aes(colour = year)) +
   geom_smooth(aes(colour = 'Smoothed trend')) + 
   scale_x_date(breaks = '1 month', date_labels = '%d %b') + 
   xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
   # manual legend creation 
-  scale_colour_manual('Legend', values = c('2024' = 'navy', '2025' = 'orange', 'Smoothed trend' = 'blue')) +
+  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
+                                           '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
+                                           '2024' = year_scheme[9], '2025' = year_scheme[10], 
+                                           'Smoothed trend' = 'blue')) +
   theme(legend.position = 'bottom', legend.direction = "horizontal")
 ```
 
@@ -349,13 +354,14 @@ m.icecreams <- leaflet() %>%
   # ice creams uncertainty map 
   addRasterImage(map.class$Class_Probs, colors = pal.unc, group = 'Class probability') %>%
   addLegend_decreasing(position = 'bottomleft', pal = pal.unc, values = c(0, 1), opacity = 1, decreasing = TRUE, group = 'Legend: Probability') %>%
-  # outline of natural & rewilded sites
-  addPolygons(data = group_bounds, color = ~colour, opacity = 1, fillColor = 'transparent', group = 'Sample sites') %>%
-  addLegend(position = 'bottomleft', colors = c('darkred','darkgreen'), values = c('rewilded', 'natural'), labels = c('Rewilded', 'Natural'), group = 'Sample sites') %>%
+  # # outline of natural & rewilded sites
+  # addPolygons(data = group_bounds, color = ~colour, opacity = 1, fillColor = 'transparent', group = 'Sample sites') %>%
+  # addLegend(position = 'bottomleft', colors = c('darkred','darkgreen'), values = c('rewilded', 'natural'), labels = c('Rewilded', 'Natural'), group = 'Sample sites') %>%
   # layer control
   addLayersControl(
     baseGroups = c('Classification map', 'Seagrass map', 'NDVI', 'Seagrass percent cover', 'Class probability'),
-    overlayGroups = c('Sample sites', 'Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
+    # overlayGroups = c('Sample sites', 'Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
+    overlayGroups = c('Legend: Class', 'Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'),
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
   hideGroup(c('Legend: Seagrass', 'Legend: NDVI', 'Legend: Percent cover (%)', 'Legend: Probability'))
@@ -421,7 +427,7 @@ pal.biomass <- colorNumeric(c('palegreen','darkolivegreen'), domain = c(0, max.b
 #| warning: false
 
 ## g/m2 * g/g --> g as output
-aveiro.carbon.leaf.factor <- 0.2870144
+aveiro.carbon.leaf.factor <- 0.2870144 ### CHANGE TO CADIZ VALUES
 derive.carbon.leaf <- function(map.biomass.leaf) {
   map.biomass.leaf * aveiro.carbon.leaf.factor
 }
@@ -429,7 +435,7 @@ derive.carbon.leaf <- function(map.biomass.leaf) {
 map.agc <- derive.carbon.leaf(map.agb)
 
 ## g/m2 * g/g --> g as output
-aveiro.carbon.root.factor <- 0.252088
+aveiro.carbon.root.factor <- 0.252088 ### CHANGE TO CADIZ VALUES
 derive.carbon.root <- function(map.biomass.root) {
   map.biomass.root * aveiro.carbon.root.factor
 }
@@ -487,13 +493,14 @@ m.biomass <- leaflet() %>%
   addRasterImage(map.bgc, colors = pal.carbon, group = 'Belowground carbon') %>%
   # TGC map
   addRasterImage(map.tgc, colors = pal.carbon, group = 'Total carbon') %>%
-  # outline of natural & rewilded sites
-  addPolygons(data = group_bounds, color = ~colour, opacity = 1, fillColor = 'transparent', group = 'Sample sites') %>%
-  addLegend(position = 'bottomleft', colors = c('darkred','darkgreen'), values = c('rewilded', 'natural'), labels = c('Rewilded', 'Natural'), group = 'Sample sites') %>%
+  # # outline of natural & rewilded sites
+  # addPolygons(data = group_bounds, color = ~colour, opacity = 1, fillColor = 'transparent', group = 'Sample sites') %>%
+  # addLegend(position = 'bottomleft', colors = c('darkred','darkgreen'), values = c('rewilded', 'natural'), labels = c('Rewilded', 'Natural'), group = 'Sample sites') %>%
   # layer control
   addLayersControl(
     baseGroups = c('NDVI', 'Aboveground biomass', 'Belowground biomass', 'Total biomass', 'Aboveground carbon', 'Belowground carbon', 'Total carbon'),
-    overlayGroups = c('Sample sites', 'Legend: NDVI', 'Legend: Biomass (g DW/m<sup>2</sup>)', 'Legend: Carbon (g C/m<sup>2</sup>)'),
+    # overlayGroups = c('Sample sites', 'Legend: NDVI', 'Legend: Biomass (g DW/m<sup>2</sup>)', 'Legend: Carbon (g C/m<sup>2</sup>)'),
+    overlayGroups = c('Legend: NDVI', 'Legend: Biomass (g DW/m<sup>2</sup>)', 'Legend: Carbon (g C/m<sup>2</sup>)'),
     options = layersControlOptions(collapsed = FALSE)
   ) %>%
   hideGroup(c('NDVI', 'Legend: NDVI', 'Legend: Carbon (g C/m<sup>2</sup>)')) %>%
