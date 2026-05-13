@@ -497,11 +497,12 @@ area.seagrass <- map.class.seagrass$Out_Class %>%
   noNA() %>%
   s2map_to_stock()
 
-# based on Ana Sousa's paper that the mean annual seagrass soil carbon in the top 10 cm is 162 g C/m2; mean monthly soil carbon for July 2025 in Aveiro is 150 g C/m2
-sousa.soil.mean <- 150.8
-carbon.soil <- sousa.soil.mean * area.seagrass / 1000000
+# based on de los Santos et al. (2022) for Z. noltei sediment in Cadiz Bay along the upper 1-m.
+delosSantos.core.diameter <- pi * (48 / 1000)^2 # conversion from mm to m
+delosSantos.soil.mean <- 0.91 / delosSantos.core.diameter
+carbon.soil <- delosSantos.soil.mean * area.seagrass / 1000000
 
-map.tgc <- map.agc + map.bgc + sousa.soil.mean
+map.tgc <- map.agc + map.bgc + delosSantos.soil.mean
 
 
 
@@ -581,6 +582,9 @@ mean_sd_pixel <- function(map) {
   return(paste(mean.pixel, '\u00B1', sd.pixel))
 }
 
+delosSantos.soil.table <- round(delosSantos.soil.mean, 1) %>%
+  paste('\u00B1', round(0.13/delosSantos.core.diameter, 1))
+
 table.bc <- data.frame(
     list(
       "component" = c('Aboveground', 'Belowground', 'Soil','Total'),
@@ -588,7 +592,7 @@ table.bc <- data.frame(
       "biomass_per_area" = c(mean_sd_pixel(map.agb), mean_sd_pixel(map.bgb), 'NA', mean_sd_pixel(map.tgb)),
       "biomass" = c(round(biomass.agb, 1), round(biomass.bgb, 1), 'NA', round(biomass.tgb, 1)),
       "carbon_content" = c(round(cadiz.carbon.leaf.factor*100, 1), round(cadiz.carbon.root.factor*100, 1), 'NA', 'NA'),
-      "carbon_per_area" = c(mean_sd_pixel(map.agc), mean_sd_pixel(map.bgc), sousa.soil.mean, mean_sd_pixel(map.tgc)),
+      "carbon_per_area" = c(mean_sd_pixel(map.agc), mean_sd_pixel(map.bgc), delosSantos.soil.table, mean_sd_pixel(map.tgc)),
       "carbon_stock" = c(round(carbon.agc, 1), round(carbon.bgc, 1), round(carbon.soil, 1), round(carbon.agc + carbon.bgc + carbon.soil, 1))
     )) 
 
@@ -597,7 +601,7 @@ names(table.bc) <- c("Component", "Total seagrass extent<br>(ha)", "Mean biomass
 knitr::kable(table.bc, 
              format = "pipe",
              align = 'c',
-             caption = 'Seagrass biomass and carbon at Cadiz Bay. "DW" denotes the dry weight of the seagrass samples while "C" denotes the carbon in the seagrass samples. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon stock per area for July 2025 in Ria de Aveiro reported in @sousa2019, which was based on the top 10 cm sediment layer.')
+             caption = 'Seagrass biomass and carbon at Cadiz Bay. "DW" denotes the dry weight of the seagrass samples while "C" denotes the carbon in the seagrass samples. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon values in Cadiz Bay reported in @delosSantos2022, which was based on the upper 1m sediment layer.')
 ```
 
 # Seasonal change in seagrass biomass
@@ -653,7 +657,7 @@ for (n in phenology$tile.name) {
   pheno.tgb <- pheno.agb + pheno.bgb
   pheno.agc <- derive.carbon.leaf(pheno.agb)
   pheno.bgc <- derive.carbon.root(pheno.bgb)
-  pheno.tgc <- pheno.agc + pheno.bgc + sousa.soil.mean
+  pheno.tgc <- pheno.agc + pheno.bgc + delosSantos.soil.mean
 
   phenology$ag_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agb)
   phenology$bg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgb)
@@ -702,7 +706,7 @@ ggplot(phenology.longer %>% filter(material == 'Biomass'), aes(x = doy, y = valu
 #| message: false
 #| warning: false
 #| fig.width: 10
-#| fig.cap: Predicted carbon values of the aboveground and belowground components of the seagrass meadows in Cadiz Bay from 2016 to 2025. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon stock per area for July 2025 in Ria de Aveiro reported in @sousa2019, which was based on the top 10 cm sediment layer.
+#| fig.cap: Predicted carbon values of the aboveground and belowground components of the seagrass meadows in Cadiz Bay from 2016 to 2025. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon values in Cadiz Bay reported in @delosSantos2022, which was based on the upper 1m sediment layer.
 
 ggplot(phenology.longer %>% filter(material == 'Carbon'), aes(x = doy, y = value, colour = component)) +
   geom_smooth(method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
