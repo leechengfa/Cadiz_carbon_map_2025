@@ -13,6 +13,7 @@ editor_options:
 knitr::opts_chunk$set(echo = TRUE)
 
 library(magrittr)
+library(readxl)
 library(sf)
 library(dplyr)
 library(tidyr)
@@ -45,10 +46,9 @@ The sites were sampled according to transect lines.
 #| message: false
 #| warning: false
 
-stations <- read.csv('data/shp/Cadiz_SamplingSites.txt', sep = '\t') %>%
-  st_as_sf(coords = c('X', 'Y')) %>%
-  rename(name = X.1) %>%
-  mutate(Cover = ifelse(X.cover == '100%', 'seagrass', ifelse(X.cover == '0%', 'non-seagrass', NA)))
+stations <- read_excel('data/shp/Coordinates Seagrass stations Cadiz.xlsx') %>%
+  st_as_sf(coords = c('Longitude', 'Latitude')) %>%
+  rename(name = ...1, cover = `SPC (%)`)
 
 # group_bounds <- read_sf('data/shp/Polygons.shp')
 #   group_bounds$colour <- c('darkred','darkgreen')
@@ -58,18 +58,18 @@ map_centre <- stations %>%
   st_centroid() %>%
   st_coordinates()
 
-pal.shp <- colorFactor(c('darkgreen','brown4'), domain = c('seagrass','non-seagrass'))
+pal.shp <- colorFactor(c('brown2','green','darkgreen'), domain = c(0,50,100))
 
 m.shp <- leaflet(stations) %>%
   addProviderTiles(providers$CartoDB.PositronNoLabels) %>%
-  setView(map_centre[1], map_centre[2], 12) %>%
-  addCircleMarkers(radius = 2, color = ~pal.shp(Cover), fillOpacity = 1, label = ~name) %>%
-  addLegend(pal = pal.shp, values = ~Cover, opacity = 1)
+  setView(map_centre[1], map_centre[2], 18) %>%
+  addCircleMarkers(radius = 2, color = ~pal.shp(cover), fillOpacity = 1, label = ~name) %>%
+  addLegend(pal = pal.shp, values = ~cover, opacity = 1, title = "Seagrass cover (%)")
 
 m.shp
 ```
 
-# Seasonal change
+# ICE CREAMS Model prediction
 
 ```{r phenologySetUp}
 #| echo: false
@@ -109,10 +109,17 @@ import.ndvi <- function(image.path) {
   return(map.index)
 }  
 
+# setting class probability threshold
+th.classProb <- 0.85
+
 for (n in phenology$tile.name) {
   pheno.icecreams <- list.files('data/ice_creams_prediction', full.names = TRUE) %>%
     grep(n, ., value = TRUE) %>%
     import.icecreams()
+  
+  # mask out pixels with low class probability
+  pheno.icecreams <- pheno.icecreams %>%
+    mask(pheno.icecreams$Class_Probs >= th.classProb, inverse = TRUE, maskvalues = 1)
   
   pheno.ndvi <- list.files('data/ndvi', full.names = TRUE) %>%
     grep(n, ., value = TRUE) %>%
@@ -126,94 +133,7 @@ for (n in phenology$tile.name) {
 }
 ```
 
-```{r phenologyndvi}
-#| echo: false
-#| error: false
-#| message: false
-#| warning: false
-#| fig.width: 10
-#| fig.cap: Mean NDVI value of pixels classified by the ICE CREAMS model as seagrass in 2024 and 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) for showcasing the analyses.
-
-phenology$ndvi.mean <- unlist(phenology$ndvi.mean)
-phenology$ndvi.sd <- unlist(phenology$ndvi.sd)
-phenology$totalCover <- unlist(phenology$totalCover)
-
-phenology$year <- format(phenology$date,"%Y") %>% 
-  as.character()
-phenology$daymonth <- format(phenology$date,"%d-%m") %>% 
-  as.character() %>%
-  as.Date("%d-%m")
-phenology$doy <- format(phenology$date, "%j") %>%
-  as.integer()
-
-year_scheme <- phenology$date %>% 
-  format('%Y') %>%
-  unique() %>%
-  length() %>%
-  viridis()
-
-## abnormally low NDVI on 2 Nov 2022; unable to understand; further investigation needed
-phenology <- phenology %>% 
-  filter(!date == '2022-11-02')
-
-# ggplot(phenology, aes(x = daymonth, y = ndvi.mean, colour = NA)) +
-#   # geom_ribbon(aes(ymin = ndvi.mean - ndvi.sd, ymax = ndvi.mean + ndvi.sd), alpha = 0.5) +
-#   geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%d-%m") %>% as.character() %>% as.Date("%d-%m"), colour = 'red', linetype = 2, linewidth = 1) +
-#   # geom_vline(xintercept = as.Date('20250715', '%Y%m%d'), colour = 'red', linetype = 2, linewidth = 1) +
-#   geom_point(aes(colour = year)) +
-#   geom_smooth(aes(colour = 'Smoothed trend')) + 
-#   scale_x_date(date_breaks = 'month', date_labels = '%d %b', expand = c(0,0)) + 
-#   xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
-#   # manual legend creation 
-#   scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
-#                                            '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
-#                                            '2024' = year_scheme[9], '2025' = year_scheme[10], 
-#                                            'Smoothed trend' = 'blue')) +
-#   theme(legend.position = 'bottom', legend.direction = "horizontal")
-
-midmonth <- c("2021-01-15","2021-02-14","2021-03-16","2021-04-15","2021-05-16","2021-06-16",
-              "2021-07-16","2021-08-16","2021-09-15","2021-10-16","2021-11-15","2021-12-16") %>%
-  as.Date()
-
-ggplot(phenology, aes(x = doy, y = ndvi.mean, colour = NA)) +
-  geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
-  geom_point(aes(colour = year)) +
-  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
-  scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
-  xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
-  # manual legend creation 
-  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
-                                           '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
-                                           '2024' = year_scheme[9], '2025' = year_scheme[10], 
-                                           'Smoothed trend' = 'blue')) +
-  theme(legend.position = 'bottom', legend.direction = "horizontal")
-```
-
-```{r phenologycover}
-#| echo: false
-#| error: false
-#| message: false
-#| warning: false
-#| fig.width: 10
-#| fig.cap: Total seagrass extent of pixels classified by the ICE CREAMS model as seagrass in 2024 and 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) for showcasing the analyses.
-
-ggplot(phenology, aes(x = doy, y = totalCover/1000000, colour = NA)) +
-  geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
-  geom_point(aes(colour = year)) +
-  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
-  scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
-  xlab('Calendar date') + ylab('Total seagrass extent (km2)') +
-  # manual legend creation 
-  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
-                                           '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
-                                           '2024' = year_scheme[9], '2025' = year_scheme[10], 
-                                           'Smoothed trend' = 'blue')) +
-  theme(legend.position = 'bottom', legend.direction = "horizontal")
-```
-
-# ICE CREAMS Model prediction
-
-For the purpose of map display and data analysis, the result from the Sentinel-2 image on 14 June 2025 was chosen. This date falls within the fieldwork dates and is thus best for validation and groundtruthing. 
+For the purpose of map display and data analysis, the result from the Sentinel-2 image on 14 June 2025 was chosen. This date falls within the fieldwork dates and is thus best for validation and groundtruthing. Post-classification, any pixels with a class probability of less than `r th.classProb*100`% were masked out.
 
 ```{r customleafletfunctionlegenddecreasing}
 #| echo: false
@@ -337,6 +257,10 @@ labels.icecreams <- c("Bare Sand","Bare Sediment","Chlorophyta","Magnoliopsida",
 map.class <- import.icecreams('data/ice_creams_prediction/S2B_MSIL2A_20250614T110619_N0511_R137_T29SQA_20250614T140230_Pred_BFRD_V1_3.tif')
   levels(map.class$Out_Class) <- data.frame(id=1:9, cover = labels.icecreams)
 
+# mask out pixels with low class probability
+map.class <- map.class %>%
+  mask(map.class$Class_Probs >= th.classProb, inverse = TRUE, maskvalues = 1)
+  
 pal.class <- colorFactor(pal.icecreams, domain = 1:9, na.color = "transparent")
 ```
 
@@ -418,6 +342,121 @@ m.icecreams <- leaflet() %>%
 m.icecreams
 ```
 
+
+# Seasonal change
+
+```{r phenologyndvi}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Annual mean NDVI value of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section.
+
+phenology$ndvi.mean <- unlist(phenology$ndvi.mean)
+phenology$ndvi.sd <- unlist(phenology$ndvi.sd)
+phenology$totalCover <- unlist(phenology$totalCover)
+
+phenology$year <- format(phenology$date,"%Y") %>% 
+  as.character()
+phenology$daymonth <- format(phenology$date,"%d-%m") %>% 
+  as.character() %>%
+  as.Date("%d-%m")
+phenology$doy <- format(phenology$date, "%j") %>%
+  as.integer()
+
+year_scheme <- phenology$date %>% 
+  format('%Y') %>%
+  unique() %>%
+  length() %>%
+  viridis()
+
+## abnormally low NDVI on 2 Nov 2022; unable to understand; further investigation needed
+phenology <- phenology %>% 
+  filter(!date == '2022-11-02')
+
+# ggplot(phenology, aes(x = daymonth, y = ndvi.mean, colour = NA)) +
+#   # geom_ribbon(aes(ymin = ndvi.mean - ndvi.sd, ymax = ndvi.mean + ndvi.sd), alpha = 0.5) +
+#   geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%d-%m") %>% as.character() %>% as.Date("%d-%m"), colour = 'red', linetype = 2, linewidth = 1) +
+#   # geom_vline(xintercept = as.Date('20250715', '%Y%m%d'), colour = 'red', linetype = 2, linewidth = 1) +
+#   geom_point(aes(colour = year)) +
+#   geom_smooth(aes(colour = 'Smoothed trend')) + 
+#   scale_x_date(date_breaks = 'month', date_labels = '%d %b', expand = c(0,0)) + 
+#   xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
+#   # manual legend creation 
+#   scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
+#                                            '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
+#                                            '2024' = year_scheme[9], '2025' = year_scheme[10], 
+#                                            'Smoothed trend' = 'blue')) +
+#   theme(legend.position = 'bottom', legend.direction = "horizontal")
+
+midmonth <- c("2021-01-15","2021-02-14","2021-03-16","2021-04-15","2021-05-16","2021-06-16",
+              "2021-07-16","2021-08-16","2021-09-15","2021-10-16","2021-11-15","2021-12-16") %>%
+  as.Date()
+
+ggplot(phenology, aes(x = doy, y = ndvi.mean, colour = NA)) +
+  geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
+  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
+  geom_point(aes(colour = year)) +
+  scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
+  xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
+  # manual legend creation 
+  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
+                                           '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
+                                           '2024' = year_scheme[9], '2025' = year_scheme[10], 
+                                           'Smoothed trend' = 'blue')) +
+  theme(legend.position = 'bottom', legend.direction = "horizontal")
+```
+
+<!-- Methodology: Explain how NDVI is used to obtain seagrass cover (equation/formula/paper) and how it's used to calculate the extent here. -->
+@zoffoli2020 established a relationship between NDVI and seagrass percent cover: $$Seagrass\,percent\,cover\,(SPC) = 172.06*NDVI - 22.18$$
+
+Conventionally in remote sensing, the extent was calculated by multiplying the number of pixels labelled as the class of interest and the pixel area. This approach tends to overestimate the extent, as many of the classified/labelled pixels might be mixed. By exploiting that a Sentinel-2 pixel of its best spatial resolution is 100m^{2} and that seagrass percent cover ranges from 0-100%, @davies2024 was able to make a relationship between the estimated extent and the cover: $$Seagrass\,extent\,in\,a\,pixel = SPC$$
+
+This provides a better estimate of the seagrass extent per pixel and reduce the overestimation. To reduce possible overestimation, pixels with less than 20% seagrass cover and pixels without the seagrass label are excluded from the calculation. $$Total\,seagrass\,extent = \sum SPC,\,where\,SPC>=20\,and\,pixels\,classified\,as\,seagrass$$
+
+```{r phenologycover}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Annual total seagrass extent of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section.
+
+ggplot(phenology, aes(x = doy, y = totalCover/1000000, colour = NA)) +
+  geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
+  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
+  geom_point(aes(colour = year)) +
+  scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
+  xlab('Calendar date') + ylab(bquote('Total seagrass extent '(km^2))) +
+  # manual legend creation 
+  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
+                                           '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
+                                           '2024' = year_scheme[9], '2025' = year_scheme[10], 
+                                           'Smoothed trend' = 'blue')) +
+  theme(legend.position = 'bottom', legend.direction = "horizontal")
+```
+
+```{r phenologytenyears}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Total seagrass extent of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section.
+
+ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
+  # geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
+  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 40)) +
+  geom_point() +
+  # scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
+  scale_x_date(date_breaks = '6 month', date_labels = '%b %Y', expand = c(0,0)) +
+  xlab('Calendar date') + ylab(bquote('Total seagrass extent '(km^2))) +
+  # # manual legend creation 
+  scale_colour_manual('Legend', values = c('Smoothed trend' = 'blue')) +
+  theme(legend.position = 'bottom', legend.direction = "horizontal")
+```
+
 # Biomass prediction 
 
 ```{r predictedbiomass}
@@ -477,17 +516,21 @@ pal.biomass <- colorNumeric(c('palegreen','darkolivegreen'), domain = c(0, max.b
 #| warning: false
 
 ## g/m2 * g/g --> g as output
-cadiz.carbon.leaf.factor <- 0.279073 
+cadiz.carbon.leaf.factor <- 0.279073 ## Cadiz site specific
+global.carbon.leaf.factor <- 0.2908576 ## includes all three sites
 derive.carbon.leaf <- function(map.biomass.leaf) {
-  map.biomass.leaf * cadiz.carbon.leaf.factor
+  # map.biomass.leaf * cadiz.carbon.leaf.factor
+  map.biomass.leaf * global.carbon.leaf.factor
 }
 
 map.agc <- derive.carbon.leaf(map.agb)
 
 ## g/m2 * g/g --> g as output
-cadiz.carbon.root.factor <- 0.271339 
+cadiz.carbon.root.factor <- 0.271339 ## Cadiz site specific
+global.carbon.root.factor <- 0.2643369 ## includes all three sites
 derive.carbon.root <- function(map.biomass.root) {
-  map.biomass.root * cadiz.carbon.root.factor
+  # map.biomass.root * cadiz.carbon.root.factor
+  map.biomass.root * global.carbon.root.factor
 }
 
 map.bgc <- derive.carbon.leaf(map.bgb)
@@ -591,7 +634,8 @@ table.bc <- data.frame(
       "extent" = rep(round(area.seagrass/10000, 1), 4) %>% unlist(),
       "biomass_per_area" = c(mean_sd_pixel(map.agb), mean_sd_pixel(map.bgb), 'NA', mean_sd_pixel(map.tgb)),
       "biomass" = c(round(biomass.agb, 1), round(biomass.bgb, 1), 'NA', round(biomass.tgb, 1)),
-      "carbon_content" = c(round(cadiz.carbon.leaf.factor*100, 1), round(cadiz.carbon.root.factor*100, 1), 'NA', 'NA'),
+      # "carbon_content" = c(round(cadiz.carbon.leaf.factor*100, 1), round(cadiz.carbon.root.factor*100, 1), 'NA', 'NA'),
+      "carbon_content" = c(round(global.carbon.leaf.factor*100, 1), round(global.carbon.root.factor*100, 1), 'NA', 'NA'),
       "carbon_per_area" = c(mean_sd_pixel(map.agc), mean_sd_pixel(map.bgc), delosSantos.soil.table, mean_sd_pixel(map.tgc)),
       "carbon_stock" = c(round(carbon.agc, 1), round(carbon.bgc, 1), round(carbon.soil, 1), round(carbon.agc + carbon.bgc + carbon.soil, 1))
     )) 
@@ -635,6 +679,10 @@ mean_pixel <- function(map) {
   return(mean.pixel)
 }
 
+convert_mean_pixel_to_Mg_ha <- function(value_g_m2) {
+  return(value_g_m2/1000000*100000)
+}
+
 for (n in phenology$tile.name) {
   pheno.class <- list.files('data/ice_creams_prediction', full.names = TRUE) %>%
     grep(n, ., value = TRUE) %>%
@@ -659,16 +707,16 @@ for (n in phenology$tile.name) {
   pheno.bgc <- derive.carbon.root(pheno.bgb)
   pheno.tgc <- pheno.agc + pheno.bgc + delosSantos.soil.mean
 
-  phenology$ag_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agb)
-  phenology$bg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgb)
-  phenology$tg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.tgb)
+  phenology$ag_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agb) %>% convert_mean_pixel_to_Mg_ha()
+  phenology$bg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgb) %>% convert_mean_pixel_to_Mg_ha()
+  phenology$tg_b_perArea[phenology$tile.name == n] <- mean_pixel(pheno.tgb) %>% convert_mean_pixel_to_Mg_ha()
   phenology$ag_b_total[phenology$tile.name == n] <- s2map_to_stock(pheno.agb) / 1000000
   phenology$bg_b_total[phenology$tile.name == n] <- s2map_to_stock(pheno.bgb) / 1000000
   phenology$tg_b_total[phenology$tile.name == n] <- s2map_to_stock(pheno.tgb) / 1000000
 
-  phenology$ag_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agc)
-  phenology$bg_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgc)
-  phenology$tg_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.tgc)
+  phenology$ag_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.agc) %>% convert_mean_pixel_to_Mg_ha()
+  phenology$bg_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.bgc) %>% convert_mean_pixel_to_Mg_ha()
+  phenology$tg_c_perArea[phenology$tile.name == n] <- mean_pixel(pheno.tgc) %>% convert_mean_pixel_to_Mg_ha()
   phenology$ag_c_total[phenology$tile.name == n] <- s2map_to_stock(pheno.agc) / 1000000
   phenology$bg_c_total[phenology$tile.name == n] <- s2map_to_stock(pheno.bgc) / 1000000
   phenology$tg_c_total[phenology$tile.name == n] <- s2map_to_stock(pheno.tgc) / 1000000
@@ -681,23 +729,22 @@ for (n in phenology$tile.name) {
 #| message: false
 #| warning: false
 #| fig.width: 10
-#| fig.cap: Predicted biomass values of the aboveground, belowground and total components of the seagrass meadows in Cadiz Bay from 2016 to 2025.
+#| fig.cap: Predicted biomass values of the aboveground, belowground and total components of the seagrass meadows in Cadiz Bay from 2016 to 2025. There were no biomass in the soil component.
 
 phenology.longer <- phenology %>%
   pivot_longer(contains("_"), names_to = c('component', 'material', 'scale'), names_sep = "_")
 
 phenology.longer$material <- factor(phenology.longer$material, labels =  c('b' = 'Biomass', 'c' = 'Carbon'))
-phenology.longer$scale <- factor(phenology.longer$scale, labels =  c('perArea' = "Mean~pixel~value~(g/m^{2})", 'total' = "Total~(Mg)"))
-phenology.longer$component <- factor(phenology.longer$component, labels = c('ag' = 'Aboveground', 'bg' = 'Belowground', 'tg' = 'Total'))
+phenology.longer$scale <- factor(phenology.longer$scale, labels =  c('perArea' = "Mean~(Mg/ha)", 'total' = "Total~(Mg)"))
+phenology.longer$component <- factor(phenology.longer$component, labels = c('ag' = 'Aboveground', 'bg' = 'Belowground', 'tg' = 'Total (including\nsoil component)'))
 
-ggplot(phenology.longer %>% filter(material == 'Biomass'), aes(x = doy, y = value, colour = component)) +
+ggplot(phenology.longer %>% filter(material == 'Biomass') %>% filter(scale == 'Mean~(Mg/ha)'), aes(x = doy, y = value, colour = component)) +
   geom_smooth(method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
   geom_point() +
-  xlab('Date') + ylab('Value (See grid labels for units)') +
+  xlab('Date') + ylab('Biomass per ha (DW, Mg/ha)') +
   scale_colour_viridis_d('Component', labels = c('ag' = 'Aboveground', 'bg' = 'Belowground', 'tg' = 'Total'), option = "D", direction = -1) +
   # scale_x_date(breaks = '1 month', date_labels = '%d %b') + 
-  scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
-  facet_grid(scale ~ ., scales = 'free', labeller = label_parsed)
+  scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365))
 ```
 
 ```{r phenologycarbongraph}
@@ -708,14 +755,15 @@ ggplot(phenology.longer %>% filter(material == 'Biomass'), aes(x = doy, y = valu
 #| fig.width: 10
 #| fig.cap: Predicted carbon values of the aboveground and belowground components of the seagrass meadows in Cadiz Bay from 2016 to 2025. The total carbon estimate included the aboveground carbon estimate, belowground carbon estimate and the soil carbon estimate. The soil carbon estimate was extracted from the soil carbon values in Cadiz Bay reported in @delosSantos2022, which was based on the upper 1m sediment layer.
 
-ggplot(phenology.longer %>% filter(material == 'Carbon'), aes(x = doy, y = value, colour = component)) +
+### FIX BUG HERE
+
+ggplot(phenology.longer %>% filter(material == 'Carbon') %>% filter(scale == 'Mean~(Mg/ha)'), aes(x = doy, y = value, colour = component)) +
   geom_smooth(method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
   geom_point() +
-  xlab('Date') + ylab('Value (See grid labels for units)') +
+  xlab('Date') + ylab('Organic carbon per ha (OC, Mg/ha)') +
   scale_colour_viridis_d('Component', option = "D", direction = -1) +
   # scale_x_date(breaks = '1 month', date_labels = '%d %b') + 
-  scale_x_continuous(breaks = format(midmonth[c(3,6,9,12)], '%j') %>% as.integer(), labels = format(midmonth[c(3,6,9,12)], '%b'), limits = c(1, 365)) + 
-  facet_wrap(scale ~ component, scales = 'free', labeller = label_parsed)
+  scale_x_continuous(breaks = format(midmonth[c(3,6,9,12)], '%j') %>% as.integer(), labels = format(midmonth[c(3,6,9,12)], '%b'), limits = c(1, 365))
 ```
 
 # Reference
