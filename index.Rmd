@@ -117,6 +117,7 @@ import.ndvi <- function(image.path) {
 th.classProb <- 0.85
 
 pheno.df.icecreams <- vector('list', 0)
+labels.icecreams <- c("Bare Sand","Bare Sediment","Chlorophyta","Magnoliopsida","Microphytobenthos","Phaeophyceae","Rhodophyta","Water","Xanthophyceae")
 
 for (n in phenology$tile.name) {
   pheno.icecreams <- list.files('data/ice_creams_prediction', full.names = TRUE) %>%
@@ -266,7 +267,6 @@ addLegend_decreasing <- function (map, position = c("topright", "bottomright", "
 #| warning: false
 
 pal.icecreams <- c('#ded4c3','#59260b','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
-labels.icecreams <- c("Bare Sand","Bare Sediment","Chlorophyta","Magnoliopsida","Microphytobenthos","Phaeophyceae","Rhodophyta","Water","Xanthophyceae")
 
 map.class <- import.icecreams('data/ice_creams_prediction/S2B_MSIL2A_20250614T110619_N0511_R137_T29SQA_20250614T140230_Pred_BFRD_V1_3.tif')
   levels(map.class$Out_Class) <- data.frame(id=1:9, cover = labels.icecreams)
@@ -522,54 +522,54 @@ ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
   theme(legend.position = 'bottom', legend.direction = "horizontal")
 ```
 
-# ```{r phenologymapseagrassgif}
-# #| echo: false
-# #| error: false
-# #| message: false
-# #| warning: false
-# #| fig.width: 10
-# #| fig.cap: Predicted ICE CREAMS seagrass extent in Cadiz Bay from 2016 to 2025.
-# 
-# # pheno.df.icecreams
-# # test <- pheno.df.icecreams %>%
-# #   filter(date == "2025-11-08" | date == "2025-12-06") %>%
-# #   as.data.frame()
-# 
-# ## manual: https://cran.r-universe.dev/gganimate/doc/manual.html
-# 
-# ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) +
-#   geom_raster() +
-#   scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') +
-#   coord_equal() +
-#   xlab('Longitude') + ylab('Latitude') +
-#   theme_light() +
-#   labs(title = "Date: {closest_state}") +
-#   ## animate
-#   transition_states(date, 0.01, 1.2, TRUE) +
-#   enter_fade() # +
-#   # exit_fade() +
-#   # ease_aes('linear')
-# ```
-# 
-# ```{r phenologymapcaulerpagif}
-# #| echo: false
-# #| error: false
-# #| message: false
-# #| warning: false
-# #| fig.width: 10
-# #| fig.cap: Predicted ICE CREAMS Caulerpa extent in Cadiz Bay from 2016 to 2025.
-# 
-# ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) +
-#   geom_raster() +
-#   scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') +
-#   coord_equal() +
-#   xlab('Longitude') + ylab('Latitude') +
-#   theme_light() +
-#   labs(title = "Date: {closest_state}") +
-#   ## animate
-#   transition_states(date, 0.01, 1.2, TRUE) +
-#   enter_fade() 
-# ```
+<!-- # ```{r phenologymapseagrassgif} -->
+<!-- # #| echo: false -->
+<!-- # #| error: false -->
+<!-- # #| message: false -->
+<!-- # #| warning: false -->
+<!-- # #| fig.width: 10 -->
+<!-- # #| fig.cap: Predicted ICE CREAMS seagrass extent in Cadiz Bay from 2016 to 2025. -->
+<!-- #  -->
+<!-- # # pheno.df.icecreams -->
+<!-- # # test <- pheno.df.icecreams %>% -->
+<!-- # #   filter(date == "2025-11-08" | date == "2025-12-06") %>% -->
+<!-- # #   as.data.frame() -->
+<!-- #  -->
+<!-- # ## manual: https://cran.r-universe.dev/gganimate/doc/manual.html -->
+<!-- #  -->
+<!-- # ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) + -->
+<!-- #   geom_raster() + -->
+<!-- #   scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') + -->
+<!-- #   coord_equal() + -->
+<!-- #   xlab('Longitude') + ylab('Latitude') + -->
+<!-- #   theme_light() + -->
+<!-- #   labs(title = "Date: {closest_state}") + -->
+<!-- #   ## animate -->
+<!-- #   transition_states(date, 0.01, 1.2, TRUE) + -->
+<!-- #   enter_fade() # + -->
+<!-- #   # exit_fade() + -->
+<!-- #   # ease_aes('linear') -->
+<!-- # ``` -->
+<!-- #  -->
+<!-- # ```{r phenologymapcaulerpagif} -->
+<!-- # #| echo: false -->
+<!-- # #| error: false -->
+<!-- # #| message: false -->
+<!-- # #| warning: false -->
+<!-- # #| fig.width: 10 -->
+<!-- # #| fig.cap: Predicted ICE CREAMS Caulerpa extent in Cadiz Bay from 2016 to 2025. -->
+<!-- #  -->
+<!-- # ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) + -->
+<!-- #   geom_raster() + -->
+<!-- #   scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') + -->
+<!-- #   coord_equal() + -->
+<!-- #   xlab('Longitude') + ylab('Latitude') + -->
+<!-- #   theme_light() + -->
+<!-- #   labs(title = "Date: {closest_state}") + -->
+<!-- #   ## animate -->
+<!-- #   transition_states(date, 0.01, 1.2, TRUE) + -->
+<!-- #   enter_fade()  -->
+<!-- # ``` -->
 
 # Biomass prediction 
 
