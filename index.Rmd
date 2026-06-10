@@ -17,6 +17,10 @@ library(readxl)
 library(sf)
 library(dplyr)
 library(tidyr)
+# library(purrr)
+library(gganimate)
+# library(tidyterra)
+# library(ggbasemap)
 library(leaflet)
 library(viridis)
 library(terra)
@@ -112,6 +116,8 @@ import.ndvi <- function(image.path) {
 # setting class probability threshold
 th.classProb <- 0.85
 
+pheno.df.icecreams <- vector('list', 0)
+
 for (n in phenology$tile.name) {
   pheno.icecreams <- list.files('data/ice_creams_prediction', full.names = TRUE) %>%
     grep(n, ., value = TRUE) %>%
@@ -120,6 +126,10 @@ for (n in phenology$tile.name) {
   # mask out pixels with low class probability
   pheno.icecreams <- pheno.icecreams %>%
     mask(pheno.icecreams$Class_Probs >= th.classProb, inverse = TRUE, maskvalues = 1)
+  
+  pheno.df.icecreams[[strsplit(n, "_|T") %>% unlist() %>% '['(3)]] <- pheno.icecreams$Out_Class %>%
+    as.data.frame(xy = TRUE, na.rm = FALSE) %>%
+    mutate(date = strsplit(n, "_|T") %>% unlist() %>% '['(3))
   
   pheno.ndvi <- list.files('data/ndvi', full.names = TRUE) %>%
     grep(n, ., value = TRUE) %>%
@@ -131,6 +141,10 @@ for (n in phenology$tile.name) {
   phenology$ndvi.sd[phenology$tile.name == n] <- global(pheno.ndvi, fun = 'sd', na.rm = TRUE)
   phenology$totalCover[phenology$tile.name == n] <- global(pheno.icecreams$Seagrass_Cover, fun = 'sum', na.rm = TRUE)
 }
+
+pheno.df.icecreams <- bind_rows(pheno.df.icecreams, .id = "date")
+  pheno.df.icecreams$date <- as.Date(pheno.df.icecreams$date, "%Y%m%d")
+  pheno.df.icecreams$class.name <- setNames(labels.icecreams, 1:9)[pheno.df.icecreams$Out_Class]
 ```
 
 For the purpose of map display and data analysis, the result from the Sentinel-2 image on 14 June 2025 was chosen. This date falls within the fieldwork dates and is thus best for validation and groundtruthing. Post-classification, any pixels with a class probability of less than `r th.classProb*100`% were masked out.
@@ -251,7 +265,7 @@ addLegend_decreasing <- function (map, position = c("topright", "bottomright", "
 #| message: false
 #| warning: false
 
-pal.icecreams <- c('#ded4c3','#926e62','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
+pal.icecreams <- c('#ded4c3','#59260b','#c6c97c','#8ca271','#ddac74','#a9665e','#ca474f','#9ec8c7','#b8dc70')
 labels.icecreams <- c("Bare Sand","Bare Sediment","Chlorophyta","Magnoliopsida","Microphytobenthos","Phaeophyceae","Rhodophyta","Water","Xanthophyceae")
 
 map.class <- import.icecreams('data/ice_creams_prediction/S2B_MSIL2A_20250614T110619_N0511_R137_T29SQA_20250614T140230_Pred_BFRD_V1_3.tif')
@@ -351,12 +365,12 @@ m.icecreams
 #| message: false
 #| warning: false
 #| fig.width: 10
-#| fig.cap: Annual mean NDVI value of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section.
+#| fig.cap: Annual mean NDVI value of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025. The black line denotes the actual mean NDVI values while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section. Arrows mark the smoothed time-series turning points, with labels indicating their dates.
 
 phenology$ndvi.mean <- unlist(phenology$ndvi.mean)
 phenology$ndvi.sd <- unlist(phenology$ndvi.sd)
 phenology$totalCover <- unlist(phenology$totalCover)
-
+  
 phenology$year <- format(phenology$date,"%Y") %>% 
   as.character()
 phenology$daymonth <- format(phenology$date,"%d-%m") %>% 
@@ -394,17 +408,31 @@ midmonth <- c("2021-01-15","2021-02-14","2021-03-16","2021-04-15","2021-05-16","
               "2021-07-16","2021-08-16","2021-09-15","2021-10-16","2021-11-15","2021-12-16") %>%
   as.Date()
 
-ggplot(phenology, aes(x = doy, y = ndvi.mean, colour = NA)) +
+p_pheno_smooth <- ggplot(phenology, aes(x = doy, y = ndvi.mean)) +
+  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10))
+ld_pheno_smooth <- layer_data(p_pheno_smooth)
+ld_pheno_minmax <- ld_pheno_smooth[c(which.min(ld_pheno_smooth$y), which.max(ld_pheno_smooth$y)), ]
+  ld_pheno_minmax$date <- ld_pheno_minmax$x %>% round() %>% as.Date(origin = '2021-01-01') %>% format('%d-%b')
+
+ggplot(phenology, aes(x = doy, y = ndvi.mean)) +
   geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
   geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
   geom_point(aes(colour = year)) +
   scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
-  xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
+  xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') + 
+  # add labels for minima and maxima of smoothed curve
+  geom_segment(data = ld_pheno_minmax,
+               aes(x = x, y = y, xend = x, yend = c(0.38, 0.58)),
+               arrow = arrow(ends = "first"), show.legend = FALSE) +
+  geom_label(data = ld_pheno_minmax,
+             aes(x = x, y = c(0.37, 0.59), label = date)
+             ) +
   # manual legend creation 
   scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
                                            '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
                                            '2024' = year_scheme[9], '2025' = year_scheme[10], 
-                                           'Smoothed trend' = 'blue')) +
+                                           'Smoothed trend' = 'blue'),
+                      limits = force, drop = TRUE) +
   theme(legend.position = 'bottom', legend.direction = "horizontal")
 ```
 
@@ -421,12 +449,26 @@ This provides a better estimate of the seagrass extent per pixel and reduce the 
 #| message: false
 #| warning: false
 #| fig.width: 10
-#| fig.cap: Annual total seagrass extent of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section.
+#| fig.cap: Annual total seagrass extent of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section. Arrows mark the smoothed time-series turning points, with labels indicating their dates.
 
-ggplot(phenology, aes(x = doy, y = totalCover/1000000, colour = NA)) +
+p_phenocover_smooth <- ggplot(phenology, aes(x = doy, y = totalCover/1000000, colour = NA)) +
+  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) 
+ld_phenocover_smooth <- layer_data(p_phenocover_smooth)
+ld_phenocover_minmax <- ld_phenocover_smooth[c(which.min(ld_phenocover_smooth$y), which.max(ld_phenocover_smooth$y)), ]
+  ld_phenocover_minmax$date <- ld_phenocover_minmax$x %>% round() %>% as.Date(origin = '2021-01-01') %>% format('%d-%b')
+
+ggplot(phenology, aes(x = doy, y = totalCover/1000000)) +
   geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
   geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 10)) + 
   geom_point(aes(colour = year)) +
+  # add labels for minima and maxima of smoothed curve
+  geom_segment(data = ld_phenocover_minmax,
+               aes(x = x, y = y, xend = x, yend = c(0.23, 1.7)),
+               arrow = arrow(ends = "first"), show.legend = FALSE) +
+  geom_label(data = ld_phenocover_minmax,
+             aes(x = x, y = c(0.22, 1.71), label = date)
+             ) +
+  # scale
   scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
   xlab('Calendar date') + ylab(bquote('Total seagrass extent '(km^2))) +
   # manual legend creation 
@@ -443,19 +485,91 @@ ggplot(phenology, aes(x = doy, y = totalCover/1000000, colour = NA)) +
 #| message: false
 #| warning: false
 #| fig.width: 10
-#| fig.cap: Total seagrass extent of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section.
+#| fig.cap: Total seagrass extent of pixels classified by the ICE CREAMS model as seagrass from 2016 to 2025, by assuming that every percent in the seagrass cover is equivalent to 1 m^2. The black line denotes the predicted extent while the blue line and grey ribbons are the geom_smooth values. The dotted red line indicates the chosen date (2025-06-14) showcased in the previous section. Arrows mark the smoothed time-series turning points, with labels indicating their dates.
+
+p_phenoextent_smooth <- ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
+  geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 40)) 
+ld_phenoextent_smooth <- layer_data(p_phenoextent_smooth)
+ld_phenoextent_smooth$delta.y <- c(-1, diff(ld_phenoextent_smooth$y))
+ld_phenoextent_smooth$turningpoint.y <- ld_phenoextent_smooth$delta.y %>%
+  sign() %>%
+  diff() %>%
+  abs() %>%
+  c(0)
+ld_phenoextent_minmax <- ld_phenoextent_smooth %>%
+  filter(turningpoint.y > 0)
+  ld_phenoextent_minmax$date <- ld_phenoextent_minmax$x %>% round() %>% as.Date(origin = '2021-01-01') %>% format('%d-%b')
+  ld_phenoextent_minmax <- ld_phenoextent_minmax %>% 
+    mutate(arrow.y = ifelse(sign(delta.y) == -1, ymin - 0.1, ymax + 0.1), label.y = ifelse(sign(delta.y) == -1, arrow.y - 0.1, arrow.y + 0.1))
 
 ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
   # geom_vline(xintercept = format(as.Date('20250614', '%Y%m%d'), "%j") %>% as.integer(), colour = 'red', linetype = 2, linewidth = 1) +
   geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 40)) +
   geom_point() +
+  # add labels for minima and maxima of smoothed curve
+  geom_segment(data = ld_phenoextent_minmax,
+               aes(x = x, y = y, xend = x, yend = arrow.y),
+               arrow = arrow(ends = "first"), show.legend = FALSE) +
+  geom_label(data = ld_phenoextent_minmax,
+             aes(x = x, y = label.y, label = date)
+             ) +
+  # scale
   # scale_x_continuous(breaks = format(midmonth, '%j') %>% as.integer(), labels = format(midmonth, '%B'), limits = c(1, 365)) +
-  scale_x_date(date_breaks = '6 month', date_labels = '%b %Y', expand = c(0,0)) +
+  scale_x_date(date_breaks = '6 month', date_labels = '%b\n%Y', expand = c(-1.01,1.01)) +
   xlab('Calendar date') + ylab(bquote('Total seagrass extent '(km^2))) +
   # # manual legend creation 
   scale_colour_manual('Legend', values = c('Smoothed trend' = 'blue')) +
   theme(legend.position = 'bottom', legend.direction = "horizontal")
 ```
+
+# ```{r phenologymapseagrassgif}
+# #| echo: false
+# #| error: false
+# #| message: false
+# #| warning: false
+# #| fig.width: 10
+# #| fig.cap: Predicted ICE CREAMS seagrass extent in Cadiz Bay from 2016 to 2025.
+# 
+# # pheno.df.icecreams
+# # test <- pheno.df.icecreams %>%
+# #   filter(date == "2025-11-08" | date == "2025-12-06") %>%
+# #   as.data.frame()
+# 
+# ## manual: https://cran.r-universe.dev/gganimate/doc/manual.html
+# 
+# ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) +
+#   geom_raster() +
+#   scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') +
+#   coord_equal() +
+#   xlab('Longitude') + ylab('Latitude') +
+#   theme_light() +
+#   labs(title = "Date: {closest_state}") +
+#   ## animate
+#   transition_states(date, 0.01, 1.2, TRUE) +
+#   enter_fade() # +
+#   # exit_fade() +
+#   # ease_aes('linear')
+# ```
+# 
+# ```{r phenologymapcaulerpagif}
+# #| echo: false
+# #| error: false
+# #| message: false
+# #| warning: false
+# #| fig.width: 10
+# #| fig.cap: Predicted ICE CREAMS Caulerpa extent in Cadiz Bay from 2016 to 2025.
+# 
+# ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) +
+#   geom_raster() +
+#   scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') +
+#   coord_equal() +
+#   xlab('Longitude') + ylab('Latitude') +
+#   theme_light() +
+#   labs(title = "Date: {closest_state}") +
+#   ## animate
+#   transition_states(date, 0.01, 1.2, TRUE) +
+#   enter_fade() 
+# ```
 
 # Biomass prediction 
 
