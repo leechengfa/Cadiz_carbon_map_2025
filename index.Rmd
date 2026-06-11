@@ -522,54 +522,54 @@ ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
   theme(legend.position = 'bottom', legend.direction = "horizontal")
 ```
 
-<!-- # ```{r phenologymapseagrassgif} -->
-<!-- # #| echo: false -->
-<!-- # #| error: false -->
-<!-- # #| message: false -->
-<!-- # #| warning: false -->
-<!-- # #| fig.width: 10 -->
-<!-- # #| fig.cap: Predicted ICE CREAMS seagrass extent in Cadiz Bay from 2016 to 2025. -->
-<!-- #  -->
-<!-- # # pheno.df.icecreams -->
-<!-- # # test <- pheno.df.icecreams %>% -->
-<!-- # #   filter(date == "2025-11-08" | date == "2025-12-06") %>% -->
-<!-- # #   as.data.frame() -->
-<!-- #  -->
-<!-- # ## manual: https://cran.r-universe.dev/gganimate/doc/manual.html -->
-<!-- #  -->
-<!-- # ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) + -->
-<!-- #   geom_raster() + -->
-<!-- #   scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') + -->
-<!-- #   coord_equal() + -->
-<!-- #   xlab('Longitude') + ylab('Latitude') + -->
-<!-- #   theme_light() + -->
-<!-- #   labs(title = "Date: {closest_state}") + -->
-<!-- #   ## animate -->
-<!-- #   transition_states(date, 0.01, 1.2, TRUE) + -->
-<!-- #   enter_fade() # + -->
-<!-- #   # exit_fade() + -->
-<!-- #   # ease_aes('linear') -->
-<!-- # ``` -->
-<!-- #  -->
-<!-- # ```{r phenologymapcaulerpagif} -->
-<!-- # #| echo: false -->
-<!-- # #| error: false -->
-<!-- # #| message: false -->
-<!-- # #| warning: false -->
-<!-- # #| fig.width: 10 -->
-<!-- # #| fig.cap: Predicted ICE CREAMS Caulerpa extent in Cadiz Bay from 2016 to 2025. -->
-<!-- #  -->
-<!-- # ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) + -->
-<!-- #   geom_raster() + -->
-<!-- #   scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') + -->
-<!-- #   coord_equal() + -->
-<!-- #   xlab('Longitude') + ylab('Latitude') + -->
-<!-- #   theme_light() + -->
-<!-- #   labs(title = "Date: {closest_state}") + -->
-<!-- #   ## animate -->
-<!-- #   transition_states(date, 0.01, 1.2, TRUE) + -->
-<!-- #   enter_fade()  -->
-<!-- # ``` -->
+```{r phenologymapseagrassgif}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Predicted ICE CREAMS seagrass extent in Cadiz Bay from 2016 to 2025.
+
+# pheno.df.icecreams
+# test <- pheno.df.icecreams %>%
+#   filter(date == "2025-11-08" | date == "2025-12-06") %>%
+#   as.data.frame()
+
+## manual: https://cran.r-universe.dev/gganimate/doc/manual.html
+
+ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) +
+ geom_raster() +
+ scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') +
+ coord_equal() +
+ xlab('Longitude') + ylab('Latitude') +
+ theme_light() +
+ labs(title = "Date: {closest_state}") +
+ ## animate
+ transition_states(date, 0.01, 1.2, TRUE) +
+ enter_fade() # +
+ # exit_fade() +
+ # ease_aes('linear')
+```
+
+```{r phenologymapcaulerpagif}
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#| fig.width: 10
+#| fig.cap: Predicted ICE CREAMS Caulerpa extent in Cadiz Bay from 2016 to 2025.
+
+ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) +
+  geom_raster() +
+  scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') +
+  coord_equal() +
+  xlab('Longitude') + ylab('Latitude') +
+  theme_light() +
+  labs(title = "Date: {closest_state}") +
+  ## animate
+  transition_states(date, 0.01, 1.2, TRUE) +
+  enter_fade()
+```
 
 # Biomass prediction 
 
