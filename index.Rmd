@@ -143,9 +143,28 @@ for (n in phenology$tile.name) {
   phenology$totalCover[phenology$tile.name == n] <- global(pheno.icecreams$Seagrass_Cover, fun = 'sum', na.rm = TRUE)
 }
 
-pheno.df.icecreams <- bind_rows(pheno.df.icecreams, .id = "date")
-  pheno.df.icecreams$date <- as.Date(pheno.df.icecreams$date, "%Y%m%d")
-  pheno.df.icecreams$class.name <- setNames(labels.icecreams, 1:9)[pheno.df.icecreams$Out_Class]
+pheno.df.icecreams <- bind_rows(pheno.df.icecreams, .id = "date") %>%
+  mutate(date = as.Date(date, "%Y%m%d"),
+         class.name = setNames(labels.icecreams, 1:9)[Out_Class],
+         season = case_when(
+           format(date, '%m') == "01" ~ 'Winter',
+           format(date, '%m') == "02" ~ 'Winter',
+           format(date, '%m') == "03" ~ 'Spring',
+           format(date, '%m') == "04" ~ 'Spring',
+           format(date, '%m') == "05" ~ 'Spring',
+           format(date, '%m') == "06" ~ 'Summer',
+           format(date, '%m') == "07" ~ 'Summer',
+           format(date, '%m') == "08" ~ 'Summer',
+           format(date, '%m') == "09" ~ 'Autumn',
+           format(date, '%m') == "10" ~ 'Autumn',
+           format(date, '%m') == "11" ~ 'Autumn',
+           format(date, '%m') == "12" ~ 'Winter'
+         ))
+
+## abnormally low NDVI on 2 Nov 2022; unable to understand; further investigation needed
+## NA extent for 26 May 2020; further investigation needed
+pheno.df.icecreams <- pheno.df.icecreams %>% 
+  filter(!date %in% c('2022-11-02', '2020-05-26'))
 ```
 
 For the purpose of map display and data analysis, the result from the Sentinel-2 image on 14 June 2025 was chosen. This date falls within the fieldwork dates and is thus best for validation and groundtruthing. Post-classification, any pixels with a class probability of less than `r th.classProb*100`% were masked out.
@@ -386,8 +405,9 @@ year_scheme <- phenology$date %>%
   viridis()
 
 ## abnormally low NDVI on 2 Nov 2022; unable to understand; further investigation needed
+## NA extent for 26 May 2020; further investigation needed
 phenology <- phenology %>% 
-  filter(!date == '2022-11-02')
+  filter(!date %in% c('2022-11-02', '2020-05-26'))
 
 # ggplot(phenology, aes(x = daymonth, y = ndvi.mean, colour = NA)) +
 #   # geom_ribbon(aes(ymin = ndvi.mean - ndvi.sd, ymax = ndvi.mean + ndvi.sd), alpha = 0.5) +
@@ -490,12 +510,12 @@ ggplot(phenology, aes(x = doy, y = totalCover/1000000)) +
 p_phenoextent_smooth <- ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
   geom_smooth(aes(colour = 'Smoothed trend'), method = 'gam', formula = y ~ s(x, bs = 'cc', k = 40)) 
 ld_phenoextent_smooth <- layer_data(p_phenoextent_smooth)
-ld_phenoextent_smooth$delta.y <- c(-1, diff(ld_phenoextent_smooth$y))
-ld_phenoextent_smooth$turningpoint.y <- ld_phenoextent_smooth$delta.y %>%
-  sign() %>%
-  diff() %>%
-  abs() %>%
-  c(0)
+  ld_phenoextent_smooth$delta.y <- c(-1, diff(ld_phenoextent_smooth$y))
+  ld_phenoextent_smooth$turningpoint.y <- ld_phenoextent_smooth$delta.y %>%
+    sign() %>%
+    diff() %>%
+    abs() %>%
+    c(0)
 ld_phenoextent_minmax <- ld_phenoextent_smooth %>%
   filter(turningpoint.y > 0)
   ld_phenoextent_minmax$date <- ld_phenoextent_minmax$x %>% round() %>% as.Date(origin = '2021-01-01') %>% format('%d-%b')
@@ -532,23 +552,48 @@ ggplot(phenology, aes(x = date, y = totalCover/1000000)) +
 
 # pheno.df.icecreams
 # test <- pheno.df.icecreams %>%
-#   filter(date == "2025-11-08" | date == "2025-12-06") %>%
+#   # filter(grepl('2015', format(date, '%Y'))) %>%
+#   filter(date == "2025-11-26" | date == "2025-12-06") %>%
 #   as.data.frame()
 
 ## manual: https://cran.r-universe.dev/gganimate/doc/manual.html
 
-ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) +
- geom_raster() +
- scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') +
- coord_equal() +
- xlab('Longitude') + ylab('Latitude') +
- theme_light() +
- labs(title = "Date: {closest_state}") +
- ## animate
- transition_states(date, 0.01, 1.2, TRUE) +
- enter_fade() # +
- # exit_fade() +
- # ease_aes('linear')
+for (d in unique(pheno.df.icecreams$date)) {
+  d <- as.Date(d)
+  label_season <- pheno.df.icecreams$season[match(d, pheno.df.icecreams$date)]
+  
+  p_seagrass <- ggplot(data = pheno.df.icecreams %>% filter(date == d) %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y)) +
+    geom_raster(aes(fill = class.name)) +
+    scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') +
+    coord_equal() +
+    xlab('Longitude') + ylab('Latitude') +
+    theme_light() +
+    labs(title = paste('Date:', d)) +
+    # labs(title = "Date: {closest_state}") #+
+    ## season label
+    geom_label(data = data.frame(x = -Inf, y = Inf, label = label_season), aes(x = x, y = y, label = label, hjust = -0.5, vjust = 2)) #+
+    # ## animate
+    # transition_states(date, 0.01, 3, TRUE) +
+    # enter_fade() # +
+    # # exit_fade() +
+    # # ease_aes('linear')
+  
+  ggsave(filename = paste0('plot/map_seagrass_', d,'.png'), plot = p_seagrass)
+}
+
+# ggplot(data = pheno.df.icecreams %>% %>% mutate(class.name = ifelse(class.name == "Magnoliopsida", "Magnoliopsida", NA)), aes(x = x, y = y, fill = class.name)) +
+#     geom_raster() +
+#     scale_fill_manual('Class', values = pal.icecreams[4], na.value = 'transparent', breaks = 'Magnoliopsida') +
+#     coord_equal() +
+#     xlab('Longitude') + ylab('Latitude') +
+#     theme_light() +
+#     labs(title = "Date: {closest_state}") #+
+#     ## season label
+#     geom_label(data = data.frame(x = -Inf, y = Inf, label = season[1]), aes(x = x, y = y, label = label, hjust = -0.5, vjust = 2)) +
+#     ## animate
+#     transition_states(date, 0.01, 3, TRUE) +
+#     enter_fade() %>%
+#       animate(nframes = length(unique(pheno.df.icecreams$date)), fps = 1)
 ```
 
 ```{r phenologymapcaulerpagif}
@@ -559,16 +604,41 @@ ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "M
 #| fig.width: 10
 #| fig.cap: Predicted ICE CREAMS Caulerpa extent in Cadiz Bay from 2016 to 2025.
 
-ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) +
-  geom_raster() +
-  scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') +
-  coord_equal() +
-  xlab('Longitude') + ylab('Latitude') +
-  theme_light() +
-  labs(title = "Date: {closest_state}") +
-  ## animate
-  transition_states(date, 0.01, 1.2, TRUE) +
-  enter_fade()
+for (d in unique(pheno.df.icecreams$date)) {
+  d <- as.Date(d)
+  label_season <- pheno.df.icecreams$season[match(d, pheno.df.icecreams$date)]
+  
+  p_caulerpa <- ggplot(data = pheno.df.icecreams %>% filter(date == d) %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y)) +
+    geom_raster(aes(fill = class.name)) +
+    scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') +
+    coord_equal() +
+    xlab('Longitude') + ylab('Latitude') +
+    theme_light() +
+    labs(title = paste('Date:', d)) +
+    # labs(title = "Date: {closest_state}") #+
+    ## season label
+    geom_label(data = data.frame(x = -Inf, y = Inf, label = label_season), aes(x = x, y = y, label = label, hjust = -0.5, vjust = 2)) #+
+    # ## animate
+    # transition_states(date, 0.01, 3, TRUE) +
+    # enter_fade() # +
+    # # exit_fade() +
+    # # ease_aes('linear')
+  
+  ggsave(filename = paste0('plot/map_caulerpa_', d,'.png'), plot = p_caulerpa)
+}
+
+# ggplot(data = pheno.df.icecreams %>% mutate(class.name = ifelse(class.name == "Chlorophyta", "Chlorophyta", NA)), aes(x = x, y = y, fill = class.name)) +
+#   geom_raster() +
+#   scale_fill_manual('Class', values = pal.icecreams[3], na.value = 'transparent', breaks = 'Chlorophyta') +
+#   coord_equal() +
+#   xlab('Longitude') + ylab('Latitude') +
+#   theme_light() +
+#   labs(title = "Date: {closest_state}") +
+#   ## season label
+#   geom_label(data = data.frame(x = -Inf, y = Inf, label = season[1]), aes(x = x, y = y, label = label, hjust = -0.5, vjust = 2)) +
+#   ## animate
+#   transition_states(date, 0.01, 1.2, TRUE) +
+#   enter_fade()
 ```
 
 # Biomass prediction 
