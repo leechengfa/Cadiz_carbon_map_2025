@@ -418,7 +418,7 @@ phenology <- phenology %>%
 #   scale_x_date(date_breaks = 'month', date_labels = '%d %b', expand = c(0,0)) + 
 #   xlab('Calendar date') + ylab('Mean NDVI over seagrass pixels') +
 #   # manual legend creation 
-#   scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
+#   scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[3], '2019' = year_scheme[4],
 #                                            '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
 #                                            '2024' = year_scheme[9], '2025' = year_scheme[10], 
 #                                            'Smoothed trend' = 'blue')) +
@@ -448,7 +448,7 @@ ggplot(phenology, aes(x = doy, y = ndvi.mean)) +
              aes(x = x, y = c(0.37, 0.59), label = date)
              ) +
   # manual legend creation 
-  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[1], '2019' = year_scheme[4],
+  scale_colour_manual('Legend', values = c('2016' = year_scheme[1], '2017' = year_scheme[2], '2018' = year_scheme[3], '2019' = year_scheme[4],
                                            '2020' = year_scheme[5], '2021' = year_scheme[6], '2022' = year_scheme[7], '2023' = year_scheme[8],
                                            '2024' = year_scheme[9], '2025' = year_scheme[10], 
                                            'Smoothed trend' = 'blue'),
